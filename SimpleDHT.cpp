@@ -23,6 +23,7 @@ SOFTWARE.
 */
 
 #include "SimpleDHT.h"
+#include <limits.h>
 
 int SimpleDHT::read(int pin, byte* ptemperature, byte* phumidity, byte pdata[40]) {
     int ret = SimpleDHTErrSuccess;
@@ -65,6 +66,52 @@ int SimpleDHT::confirm(int pin, int us, byte level) {
     }
     return SimpleDHTErrSuccess;
 }
+
+
+int SimpleDHT::levelTime(int pin, byte level)
+{
+/*
+    int time = 0;
+
+  // On AVR platforms use direct GPIO port access as it's much faster and better
+  // for catching pulses that are 10's of microseconds in length:
+  #ifdef __AVR
+    uint8_t portState = level ? _bit : 0;
+    while ( ( *portInputRegister( _port ) & _bit ) == portState )
+    {
+        delayMicroseconds(10);
+	time += 10;
+    }
+  // Otherwise fall back to using digitalRead (this seems to be necessary on ESP8266
+  // right now, perhaps bugs in direct port access functions?).
+#else
+    while ( digitalRead(pin) == level )
+    {
+        delayMicroseconds(10);
+        time += 20;
+    };
+#endif
+*/
+    unsigned long time_start = micros();
+    unsigned long time_end;
+
+  #ifdef __AVR
+    uint8_t portState = level ? _bit : 0;
+    while ( ( *portInputRegister( _port ) & _bit ) == portState );
+  #else
+    while ( digitalRead( pin ) == level );
+  #endif
+    
+    time_end = micros();
+    unsigned long time;
+    if ( time_end < time_start )
+    {   // clock overflow (went back through 0)
+             time = time_end + ULONG_MAX - time_start;        
+    } else { time = time_end - time_start; }
+
+    return time;
+}
+
 
 byte SimpleDHT::bits2byte(byte data[8]) {
     byte v = 0;
@@ -133,30 +180,57 @@ int SimpleDHT11::sample(int pin, byte data[40]) {
     //    2. PULL HIGH 20-40us.
     //    3. SET TO INPUT.
     pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    delay(500);
+    //delay(250);
+
     digitalWrite(pin, LOW);
     delay(20);
+
     digitalWrite(pin, HIGH);
+    delayMicroseconds(25);
+
     pinMode(pin, INPUT);
-    delayMicroseconds(30);
+    //delayMicroseconds(10);
+
     // DHT11 starting:
     //    1. PULL LOW 80us
     //    2. PULL HIGH 80us
-    if (confirm(pin, 80, LOW)) {
+    //delayMicroseconds(10);
+    int t = levelTime( pin, LOW );
+    //if (confirm(pin, 80, LOW)) {
+    if (t < 60) {
         return SimpleDHTErrStartLow;
+        //return (t == 0 ? 1234 : t);
+	//return t;
     }
-    if (confirm(pin, 80, HIGH)) {
+    //delayMicroseconds(20);
+//    if (confirm(pin, 80, HIGH)) {
+    t = levelTime( pin, HIGH );
+    if ( t < 70 ) {  // specs says: 80
         return SimpleDHTErrStartHigh;
+        //return (t == 0 ? 1234 : t);
+        //return t;
     }
 
     // DHT11 data transmite:
     //    1. 1bit start, PULL LOW 50us
     //    2. PULL HIGH 26-28us, bit(0)
     //    3. PULL HIGH 70us, bit(1)
-    for (int j = 0; j < 40; j++) {
-        if (confirm(pin, 50, LOW)) {
-            return SimpleDHTErrDataLow;
-        }
+    for (int j = 0; j < 40; j++)
+    {
+//        if (confirm(pin, 50, LOW)) {
+//            return SimpleDHTErrDataLow;
+//        }
+//        delayMicroseconds(10);
 
+        t = levelTime( pin, LOW );
+        if ( t < 35 ) { // specs says: 50us
+            //return SimpleDHTErrDataLow;
+            //return (t == 0 ? 1234 : t);
+	    //return t;
+        }
+/*
         // read a bit, should never call method,
         // for the method call use more than 20us,
         // so it maybe failed to detect the bit0.
@@ -172,7 +246,16 @@ int SimpleDHT11::sample(int pin, byte data[40]) {
         if (!ok) {
             return SimpleDHTErrDataRead;
         }
-        data[j] = (tick > 3? 1:0);
+        data[j] = ( tick > 3 ? 1 : 0 );
+*/
+        //delayMicroseconds(10);
+
+	t = levelTime( pin, HIGH );
+        if (t < 12 )  // specs say: 20us
+            //return SimpleDHTErrDataRead;
+            return (t == 0 ? 1234 : t);
+            //return t;
+	data[ j ] = ( t > 40 ? 1 : 0 );
     }
 
     // DHT11 EOF:
@@ -202,7 +285,7 @@ int SimpleDHT22::read2(int pin, float* ptemperature, float* phumidity, byte pdat
         memcpy(pdata, data, 40);
     }
     if (ptemperature) {
-        *ptemperature = (float)((temperature & 0x8000 ? -1 : 1) * (temperature & 0x7FFF)) / 10.0;
+        *ptemperature = (float)temperature / 10.0;
     }
     if (phumidity) {
         *phumidity = (float)humidity / 10.0;

@@ -45,7 +45,31 @@
 #define SimpleDHTErrZeroSamples 106
 
 class SimpleDHT {
+
+  #ifdef __AVR
+    // Use direct GPIO access on an 8-bit AVR so keep track of the port and bitmask
+    // for the digital pin connected to the DHT.  Other platforms will use digitalRead.
+    uint8_t _bit, _port;
+  #endif
+
+
 public:
+  #ifdef __AVR
+    SimpleDHT(int pin) {
+      _bit = digitalPinToBitMask(pin);
+      _port = digitalPinToPort(pin);
+
+    };
+    
+    show_cfg(){
+      Serial.print("bit: ");
+      Serial.println( _bit, DEC );
+      Serial.print("port: ");
+      Serial.println( _port, DEC );
+    }
+
+  #endif
+
     // to read from dht11 or dht22.
     // @param pin the DHT11 pin.
     // @param ptemperature output, NULL to igore. In Celsius.
@@ -56,9 +80,11 @@ public:
     // @remark the min delay for this method is 1s(DHT11) or 2s(DHT22).
     // @return SimpleDHTErrSuccess is success; otherwise, failed.
     virtual int read(int pin, byte* ptemperature, byte* phumidity, byte pdata[40]);
+
     // to get a more accurate data.
     // @remark it's available for dht22. for dht11, it's the same of read().
     virtual int read2(int pin, float* ptemperature, float* phumidity, byte pdata[40]) = 0;
+
 protected:
     // confirm the OUTPUT is level in us, 
     // for example, when DHT11 start sample, it will
@@ -69,18 +95,25 @@ protected:
     //    for function call use more time, maybe never got bit0.
     // @remark please use simple_dht11_read().
     virtual int confirm(int pin, int us, byte level);
+
+    // measure lenght (time) of expected state
+    virtual int levelTime(int pin, byte level);
+
     // @data the bits of a byte.
     // @remark please use simple_dht11_read().
     virtual byte bits2byte(byte data[8]);
+
     // read temperature and humidity from dht11.
     // @param pin the pin for DHT11, for example, 2.
     // @param data a byte[40] to read bits to 5bytes.
     // @return 0 success; otherwise, error.
     // @remark please use simple_dht11_read().
     virtual int sample(int pin, byte data[40]) = 0;
+
     // parse the 40bits data to temperature and humidity.
     // @remark please use simple_dht11_read().
     virtual int parse(byte data[40], short* ptemperature, short* phumidity);
+
 };
 
 /*
@@ -102,6 +135,12 @@ protected:
 */
 class SimpleDHT11 : public SimpleDHT {
 public:
+  #ifdef __AVR
+    SimpleDHT11(int pin)
+        : SimpleDHT (pin)
+    {}
+  #endif
+
     virtual int read2(int pin, float* ptemperature, float* phumidity, byte pdata[40]);
 protected:
     virtual int sample(int pin, byte data[40]);
@@ -126,6 +165,12 @@ protected:
 */
 class SimpleDHT22 : public SimpleDHT {
 public:
+  #ifdef __AVR
+    SimpleDHT22(int pin)
+        : SimpleDHT (pin)
+    {}
+  #endif
+
     virtual int read2(int pin, float* ptemperature, float* phumidity, byte pdata[40]);
 protected:
     virtual int sample(int pin, byte data[40]);
